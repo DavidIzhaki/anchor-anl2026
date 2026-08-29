@@ -155,18 +155,10 @@ uv run python eval/lab.py 100 18 8 MODEL_KIND=stability DECOUPLE_BID=False   # a
 uv run python eval/taus.py
 ```
 
-## Submission
 
-```bash
-./make_submission.sh        # or make_submission.bat on Windows
-```
-
-produces `submission.zip` (`anchor.py` + `requirements.txt`), which is what is uploaded to
-the ANL site.
 
 ## Reports
 
 - [`report/report_anac.pdf`](report/report_anac.pdf) — the ANAC competition report (design,
   evaluation, ablations).
-- [`report/report.pdf`](report/report.pdf) — the course report.
 - [`report/EXPERIMENTS.md`](report/EXPERIMENTS.md) — the complete experiment log.
