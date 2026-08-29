@@ -172,42 +172,8 @@ class AnchorNegotiator(SAOCallNegotiator):
     # only needs the ranking, which the simple model already recovers, and ~100
     # offers is not the sparse regime where Bayesian helps. We keep "stability"
     # (simpler, interpretable) and retain the Bayesian path for the report.
-    MODEL_KIND = "pairwise"   # v5: pairwise beats plain frequency (see below)
+    MODEL_KIND = "stability"
     BAYES_TEMP = 6.0  # softmax sharpness over weight hypotheses
-
-    # "optim": COMPUTE-HEAVY opponent model. Instead of cheap frequency counting,
-    # fit the opponent's full additive utility (per-issue value scores AND issue
-    # weights) by max-entropy inverse-RL: assume their offers are Boltzmann-rational
-    # (drawn ~ exp(u_opp(o))), early offers weighted more, and run OPTIM_ITERS of
-    # gradient ascent on the offered-vs-all-outcomes contrast each update. This is
-    # the "spend seconds to model better" lever -- the one thing that lifts BOTH
-    # scoring terms (tau_me / Concealing share, and deal-finding / Advantage).
-    # Tested head-to-head vs the frequency model; see report/EXPERIMENTS.md.
-    OPTIM_ITERS = 60
-    OPTIM_LR = 0.5
-
-    # "pairwise": frequency value scores PENALISED by how often WE offered each
-    # value (values we keep proposing and they keep rejecting are likely bad for
-    # them -- information the pure frequency model throws away). GAMMA is the
-    # penalty weight. Targets tau_me (the parity-pinned Concealing term) with a
-    # genuinely additive signal. Flag-gated; tested on the live-matching ANL dist.
-    PAIRWISE_GAMMA = 0.3
-    # N6: issue-weight estimator for the pairwise model. "stability" (default, the
-    # v6 shipped behaviour) or "divergence" (weight by our-vs-their value-distribution
-    # total variation). Flag-gated experiment on top of pairwise values.
-    PAIRWISE_WEIGHT = "stability"
-    # N9: earliness-weight the our-offer penalty (early near-ideal rejected offers
-    # weigh more). Flag-gated experiment; expectation marginal (model side maxed).
-    PAIRWISE_TIMEW = False
-
-    # DECOUPLE_BID: the scorer reads our EMITTED estimate (tau_me) but what we
-    # REVEAL drives the opponent's tau of us (tau_opp) -- these are INDEPENDENT.
-    # So emit the accurate pairwise model (raises tau_me) while BIDDING on the
-    # plain frequency model (so we reveal no more than v4 does, keeping tau_opp at
-    # baseline). Net: the Concealing SHARE rises without any Advantage cost. Only
-    # active with MODEL_KIND="pairwise". Flag-gated; tested on the ANL dist.
-    DECOUPLE_BID = True   # v5: emit pairwise (high tau_me), bid plain (tau_opp flat)
-    DECOUPLE_PHASED = False  # experiment: bid plain early, sharp model in end-game
 
     # Decoy-freeze concealment: hold a FIXED value on our least-important issue
     # across all offers. Opponent models that learn issue weights from which
@@ -294,21 +260,6 @@ class AnchorNegotiator(SAOCallNegotiator):
     # extraction against acceptance smoothly. Measured.
     PACCEPT_SEARCH = False
 
-    # LOOKAHEAD (the "spend more compute like the slow leaders do" experiment).
-    # Instead of picking the Nash bid greedily, score each candidate bid by its
-    # EXPECTED final utility: EV(o) = P_accept(o,t)*u(o) + (1-P_accept)*continuation,
-    # where continuation = what we can still secure later (max of our reservation
-    # and the best the opponent has shown us). P_accept is a time-decaying
-    # behavioural model of the opponent (they demand near-ideal early, concede
-    # toward their estimated reservation late). LOOKAHEAD_MC>0 averages EV over that
-    # many Monte-Carlo samples of the opponent's (uncertain) reservation -- the
-    # genuine compute-heavy path. Flag-gated; see report/EXPERIMENTS.md for whether
-    # it beats greedy Nash (prior: no -- the 1-step PACCEPT version already lost,
-    # because acting harder on a NOISY model amplifies its errors).
-    LOOKAHEAD = False
-    LOOKAHEAD_SOFT = 0.20
-    LOOKAHEAD_MC = 0
-
     # --- Offline-trained concession policy (Phase 3) ---------------------------
     # A state-conditioned policy whose weights are optimised OFFLINE
     # (eval/train_policy.py) against the opponent roster and FROZEN here. At
@@ -318,7 +269,7 @@ class AnchorNegotiator(SAOCallNegotiator):
     # time out into a no-deal -- it can only affect how much we concede. Inference
     # is pure-python (a 7-dim dot product + sigmoid); no runtime memory, no deps.
     # Off unless a trained weight vector is shipped.
-    USE_LEARNED_POLICY = False
+    USE_LEARNED_POLICY = True
     # Residual MLP policy: target = Boulware_fraction(t) + correction(state), where
     # correction is a small tanh-MLP (9 features -> 6 tanh hidden -> 1), bounded by
     # POLICY_CORR_SCALE. With all-zero weights the correction is 0 and the policy IS
@@ -327,7 +278,7 @@ class AnchorNegotiator(SAOCallNegotiator):
     POLICY_NFEAT = 9
     POLICY_NHID = 6
     POLICY_CORR_SCALE = 0.25
-    POLICY_WEIGHTS = [0.0] * (6 * 9 + 6 + 6 + 1)  # W1(6x9)+b1(6)+W2(6)+b2(1) = 67
+    POLICY_WEIGHTS = [-1.58061, 0.584841, -0.270545, 0.289424, -0.527168, 1.087766, -1.414363, -0.95018, 0.752972, -0.665074, -0.263267, -0.623662, 1.241727, -1.28822, -1.591438, 0.759345, -0.017303, 0.026934, 1.942645, -0.148858, 1.23914, 0.461772, -1.700512, 1.124456, -0.724774, -1.687926, -0.070436, 0.003954, 0.018996, 0.636007, 1.052079, -1.087353, -0.58209, -0.366941, -0.866312, 1.042626, 1.372333, -1.484458, 0.549604, 1.908305, -0.001405, -1.454087, -0.337901, -1.353918, -2.063029, 2.162436, -1.25936, 1.25322, 0.565974, -2.838167, -0.055588, -0.842587, 1.145027, 0.00285, -0.48418, -0.160904, -0.06439, -0.592488, -1.619275, 0.683694, 0.024074, -2.013721, -0.846135, 0.484881, -0.397698, 0.225135, 1.700206]
 
     # First-mover end-game: if we are the LAST to propose (the opponent will not
     # get a turn to accept a fresh bid), table the opponent's own best-shown offer
@@ -342,29 +293,6 @@ class AnchorNegotiator(SAOCallNegotiator):
     # default; BETA scales the effect. Measured.
     ADAPTIVE_CONCESSION = False
     ADAPT_BETA = 0.5
-
-    # Scenario conditioning (the ANL2024-winner "Shochan" idea): adapt our firmness
-    # to the DOMAIN STRUCTURE rather than to opponent behaviour. competitiveness =
-    # correlation between our utility and our estimate of theirs over the outcome
-    # space. On a COOPERATIVE domain (corr>0, our high-utility outcomes are also
-    # good for them) we can hold a HIGHER floor and extract more -- they will still
-    # accept. On a COMPETITIVE/zero-sum domain (corr<0) we keep the standard floor.
-    # COND_K scales the floor shift; sign of COND_K flips the direction for the
-    # ablation. Flag-gated, default off. Tested on the live-matching ANL dist.
-    SCENARIO_CONDITION = False
-    COND_K = 0.15
-
-    # BID_STRATEGY: the BIDDING ARCHITECTURE (not a tuning knob -- a different
-    # algorithm for "which outcome to propose").
-    #   "boulware" (default): time-based floored Boulware concession (v4).
-    #   "micro"   : MiCRO (Minimal Concession + reciprocity). Walk our outcomes
-    #               best-first; concede the next one ONLY when we have not offered
-    #               more distinct outcomes than the opponent has (so we never out-
-    #               concede them); otherwise repeat. Time-agnostic, behaviour-driven.
-    #               A proven strong+fast ANAC architecture; tested here head-to-head
-    #               vs Boulware. The end-game safety nets still apply so short
-    #               deadlines stay safe. See report/EXPERIMENTS.md for the verdict.
-    BID_STRATEGY = "boulware"
 
     # ------------------------------------------------------------------ init --
     def on_preferences_changed(self, changes):
@@ -407,11 +335,6 @@ class AnchorNegotiator(SAOCallNegotiator):
         self._sorted_utils = [su[0] for su in scored]
         self._sorted_outcomes = [su[1] for su in scored]
 
-        # --- MiCRO bidding state (used when BID_STRATEGY == "micro") ---
-        self._micro_i = 0                  # highest sorted-outcome index offered
-        self._my_unique: set = set()       # distinct outcomes WE have proposed
-        self._opp_unique: set = set()      # distinct outcomes the opponent proposed
-
         # --- Decoy-freeze: pick our least-important issue (smallest utility swing)
         # and hold our preferred value on it across all offers (see DECOY_FREEZE).
         self._decoy_issue = None
@@ -434,16 +357,10 @@ class AnchorNegotiator(SAOCallNegotiator):
         self._last_opp_value = [None] * self._n_issues
         self._issue_changes = [0] * self._n_issues
         self._opp_offers_seen = 0
-        self._optim_idx = None  # cached all-outcome matrix for MODEL_KIND="optim"
-        self._comp_cache = None  # cached competitiveness (SCENARIO_CONDITION)
-        self._comp_step = -1
-        self._bid_model = None  # decoupled bidding model (set each rebuild)
 
         # --- Deception accumulators: how often WE have revealed each value, so we
         # can prefer under-revealed values and keep our offer distribution flat.
         self._my_value_counts = [dict() for _ in range(self._n_issues)]
-        self._my_value_weighted = [dict() for _ in range(self._n_issues)]  # earliness-wtd
-        self._my_offer_count = 0
 
         # Opponent offer history (offer, early-weight) for the Bayesian model.
         self._opp_offer_hist: list[tuple] = []
@@ -502,42 +419,12 @@ class AnchorNegotiator(SAOCallNegotiator):
             # point if we are scored before folding in any opponent offer (e.g. we
             # open and the opponent accepts immediately). The gradient is
             # negligible (1e-6) once real counts accumulate.
-            # NOTE: a real [0,1] ramp here was tested as a forfeit-tail fix and
-            # REJECTED -- it regressed tau_me (0.574->0.533) without raising the
-            # min, because the con=0 cases are 3-4 outcome stress-mode artifacts
-            # whose sparse data is simply wrong; they do not occur on the ~1000-
-            # outcome live domains. See report/EXPERIMENTS.md.
-            if self.MODEL_KIND == "pairwise":
-                # ADDITIVE signal the frequency model discards: values WE keep
-                # offering (and they keep rejecting) are probably bad for them.
-                # score(v) = their_freq(v) - GAMMA * our_freq(v). Uses _my_value_
-                # counts (the offers they rejected) -- genuinely new information,
-                # not a re-processing of their sparse offers. GAMMA small so it
-                # cannot dominate when our/their good values legitimately overlap
-                # (cooperative domains).
-                my = (self._my_value_weighted[i] if self.PAIRWISE_TIMEW
-                      else self._my_value_counts[i])
-                max_my = max(my.values()) if my else 1.0
-                mapping = {
-                    v: (counts.get(v, 0) / max_count if max_count > 0 else 0.0)
-                    - self.PAIRWISE_GAMMA * (my.get(v, 0) / max_my if max_my > 0 else 0.0)
-                    + 1e-6 * idx
-                    for idx, v in enumerate(self._issue_values[i])
-                }
-            else:
-                mapping = {
-                    v: (counts.get(v, 0) / max_count if max_count > 0 else 0.0)
-                    + 1e-6 * idx
-                    for idx, v in enumerate(self._issue_values[i])
-                }
+            mapping = {
+                v: (counts.get(v, 0) / max_count if max_count > 0 else 0.0)
+                + 1e-6 * idx
+                for idx, v in enumerate(self._issue_values[i])
+            }
             value_funs.append(TableFun(mapping=mapping))
-
-        if self.MODEL_KIND == "optim" and self._opp_offers_seen >= 2:
-            fitted = self._optim_model()
-            if fitted is not None:
-                self.private_info["opponent_ufun"] = fitted
-                self._bid_model = None  # defense-in-depth: no stale bid model
-                return
 
         if self.MODEL_KIND == "entropy" and self._opp_offers_seen >= 2:
             # Issue weight from the CONCENTRATION of the opponent's offered-value
@@ -557,26 +444,6 @@ class AnchorNegotiator(SAOCallNegotiator):
                     continue
                 ent = -sum((c / tot) * math.log(c / tot) for c in counts.values() if c > 0)
                 raw.append(max(0.0, 1.0 - ent / math.log(k)))  # 1 = concentrated
-            total = sum(raw)
-            weights = ([r / total for r in raw] if total > 0
-                       else [1.0 / self._n_issues] * self._n_issues)
-        elif (self.MODEL_KIND == "pairwise" and self.PAIRWISE_WEIGHT == "divergence"
-              and self._opp_offers_seen >= 2):
-            # N6: weight an issue by how much OUR offered value-distribution diverges
-            # from THEIRS (total variation). High divergence = a contested issue we
-            # keep pushing and they keep resisting = important to them. Uses the
-            # same discarded our-offer signal as the pairwise value penalty.
-            raw = []
-            for i in range(self._n_issues):
-                their = self._value_counts[i]
-                tt = sum(their.values()) or 1.0
-                mine = self._my_value_counts[i]
-                mt = sum(mine.values()) or 1.0
-                tv = 0.5 * sum(
-                    abs(their.get(v, 0) / tt - mine.get(v, 0) / mt)
-                    for v in self._issue_values[i]
-                )
-                raw.append(tv)
             total = sum(raw)
             weights = ([r / total for r in raw] if total > 0
                        else [1.0 / self._n_issues] * self._n_issues)
@@ -602,111 +469,6 @@ class AnchorNegotiator(SAOCallNegotiator):
         self.private_info["opponent_ufun"] = LinearAdditiveUtilityFunction(
             values=value_funs,
             weights=weights,
-            outcome_space=self.ufun.outcome_space,
-        )
-
-        # DECOUPLE: bid on a PLAIN frequency model (no pairwise penalty) so our
-        # revealed behaviour -- and thus the opponent's tau of us -- matches v4,
-        # while the EMITTED (scored) model above stays the accurate pairwise one.
-        self._bid_model = None
-        if self.DECOUPLE_BID and self.MODEL_KIND == "pairwise":
-            plain = []
-            for i in range(self._n_issues):
-                counts = self._value_counts[i]
-                mx = max(counts.values()) if counts else 1.0
-                plain.append(TableFun(mapping={
-                    v: (counts.get(v, 0) / mx if mx > 0 else 0.0) + 1e-6 * idx
-                    for idx, v in enumerate(self._issue_values[i])
-                }))
-            self._bid_model = LinearAdditiveUtilityFunction(
-                values=plain, weights=weights,
-                outcome_space=self.ufun.outcome_space,
-            )
-
-    def _bidding_ufun(self):
-        """The opponent model used for BIDDING/strategy (may differ from the
-        EMITTED, scored model when DECOUPLE_BID is on). Defaults to the emitted.
-
-        DECOUPLE_PHASED (experiment): bid on the PLAIN model early (the phase where
-        our offers teach the opponent's model of us -> keep tau_opp low), then switch
-        to the sharp EMITTED (pairwise) model in the end-game (where deals close ->
-        pick outcomes the opponent actually likes -> close better deals). Aims to add
-        ADVANTAGE without the tau_opp cost of bidding sharp throughout."""
-        bm = getattr(self, "_bid_model", None)
-        if bm is None:
-            return self.opponent_ufun
-        if self.DECOUPLE_PHASED and getattr(self, "_last_t", 0.0) >= self._effective_times()[0]:
-            return self.opponent_ufun  # sharp (emitted) model in the end-game
-        return bm
-
-    def _optim_model(self):
-        """Max-entropy inverse-RL fit of the opponent's additive utility.
-
-        Model: P(opponent offers o) ~ exp(u(o)), u(o)=sum_i w_i * s_i(o_i), with
-        early offers up-weighted. We maximise (early-weighted offered utility) minus
-        log-sum-exp over ALL outcomes -- i.e. make the outcomes they actually
-        proposed score high relative to the whole space -- by OPTIM_ITERS steps of
-        gradient ascent on the value scores s and (softmax-parameterised) weights w.
-        Compute-heavy by design. Returns a LinearAdditiveUtilityFunction or None.
-        """
-        import numpy as np
-
-        ni = self._n_issues
-        if ni == 0 or not self._opp_offer_hist:
-            return None
-        # Cache the all-outcomes value-index matrix once per negotiation.
-        if getattr(self, "_optim_idx", None) is None:
-            os_ = self.ufun.outcome_space
-            allo = list(os_.enumerate_or_sample(max_cardinality=100_000))
-            self._optim_vmap = [
-                {v: j for j, v in enumerate(self._issue_values[i])} for i in range(ni)
-            ]
-            self._optim_idx = np.array(
-                [[self._optim_vmap[i][o[i]] for i in range(ni)] for o in allo]
-            )
-        idx = self._optim_idx                      # (N, ni)
-        ks = [len(self._issue_values[i]) for i in range(ni)]
-        orow = np.array(
-            [[self._optim_vmap[i][o[i]] for i in range(ni)] for o, _ in self._opp_offer_hist]
-        )                                          # (T, ni)
-        ow = np.array([w for _, w in self._opp_offer_hist], dtype=float)
-        ow = ow / max(1e-9, ow.sum())
-
-        def softmax(z):
-            z = z - z.max()
-            e = np.exp(z)
-            return e / e.sum()
-
-        s = [np.zeros(ks[i]) for i in range(ni)]
-        theta = np.zeros(ni)
-        for _ in range(int(self.OPTIM_ITERS)):
-            w = softmax(theta)
-            S = np.stack([s[i][idx[:, i]] for i in range(ni)], axis=1)   # (N, ni)
-            u_all = S @ w
-            p = softmax(u_all)                                           # (N,)
-            So = np.stack([s[i][orow[:, i]] for i in range(ni)], axis=1)  # (T, ni)
-            for i in range(ni):
-                g = np.zeros(ks[i])
-                np.add.at(g, orow[:, i], ow * w[i])
-                np.add.at(g, idx[:, i], -w[i] * p)
-                s[i] += self.OPTIM_LR * g
-            gw = (ow[:, None] * So).sum(0) - (p[:, None] * S).sum(0)     # (ni,)
-            theta += self.OPTIM_LR * (w * (gw - (w * gw).sum()))
-
-        # Normalise value scores to [0,1] (+tiny gradient so never constant).
-        value_funs = []
-        for i in range(ni):
-            si = s[i]
-            lo, hi = float(si.min()), float(si.max())
-            rng = hi - lo if hi > lo else 1.0
-            mapping = {
-                v: (float(si[j]) - lo) / rng + 1e-6 * j
-                for j, v in enumerate(self._issue_values[i])
-            }
-            value_funs.append(TableFun(mapping=mapping))
-        w = softmax(theta)
-        return LinearAdditiveUtilityFunction(
-            values=value_funs, weights=[float(x) for x in w],
             outcome_space=self.ufun.outcome_space,
         )
 
@@ -754,7 +516,6 @@ class AnchorNegotiator(SAOCallNegotiator):
         if offer is None:
             return
         self._opp_offers_seen += 1
-        self._opp_unique.add(offer)  # for MiCRO reciprocity counting
         n = self._opp_offers_seen
         u_to_us = float(self.ufun(offer))
         if self._opp_offers_seen == 1:
@@ -863,47 +624,17 @@ class AnchorNegotiator(SAOCallNegotiator):
             # Reciprocity: advance our clock in proportion to the opponent's
             # revealed concession (firm opponent -> ~0 -> unchanged).
             t = min(1.0, t * (1.0 + self.ADAPT_BETA * self._opp_concession))
-        fair_floor = self._fair_floor
-        if self.SCENARIO_CONDITION:
-            # Shift the floor by domain competitiveness (cooperative => hold higher).
-            comp = self._competitiveness()
-            fair_floor = min(
-                self._u_max,
-                max(self._reserve, self._fair_floor
-                    + self.COND_K * comp * (self._u_max - self._fair_floor)),
-            )
         if t < rescue_time:
             if self.USE_LEARNED_POLICY:
                 return self._policy_target(t, rescue_time)
             tt = t / rescue_time if rescue_time > 0 else 1.0  # renormalise firm window
             concession = 1.0 - tt ** (1.0 / self.CONCESSION_EXPONENT)
-            return fair_floor + (self._u_max - fair_floor) * concession
+            return self._fair_floor + (self._u_max - self._fair_floor) * concession
         frac = (t - rescue_time) / max(1e-9, 1.0 - rescue_time)  # 0 -> 1
         rescue_floor = self._reserve + self.RESCUE_FLOOR_FRACTION * (
             self._u_max - self._reserve
         )
-        return rescue_floor + (fair_floor - rescue_floor) * (1.0 - frac)
-
-    def _competitiveness(self) -> float:
-        """Domain competitiveness in [-1,1]: correlation between OUR utility and our
-        ESTIMATE of the opponent's utility over a sample of outcomes. >0 cooperative
-        (aligned preferences), <0 competitive/zero-sum. Cached per step. Returns 0
-        (neutral) until we have a usable model."""
-        if getattr(self, "_comp_cache", None) is not None and self._comp_step == self._opp_offers_seen:
-            return self._comp_cache
-        opp = self._bidding_ufun()
-        if opp is None or self._opp_offers_seen < 2 or not self._sorted_outcomes:
-            return 0.0
-        import numpy as np
-        outs = self._sorted_outcomes
-        if len(outs) > 300:
-            outs = outs[:: max(1, len(outs) // 300)]
-        a = np.array([float(self.ufun(o)) for o in outs])
-        b = np.array([float(opp(o)) for o in outs])
-        comp = 0.0 if a.std() < 1e-9 or b.std() < 1e-9 else float(np.corrcoef(a, b)[0, 1])
-        self._comp_cache = comp
-        self._comp_step = self._opp_offers_seen
-        return comp
+        return rescue_floor + (self._fair_floor - rescue_floor) * (1.0 - frac)
 
     def _opp_reservation_est(self) -> float:
         """Estimate the opponent's acceptance floor (in OUR model's units).
@@ -914,7 +645,7 @@ class AnchorNegotiator(SAOCallNegotiator):
         their offers only lower-bound, not pin, that floor. Used by the "rvtarget"
         rescue selector to keep only bids they are likely to accept.
         """
-        opp = self._bidding_ufun()
+        opp = self.opponent_ufun
         if opp is None or not self._opp_offer_hist:
             return 0.0
         worst = min(float(opp(o)) for o, _ in self._opp_offer_hist)
@@ -943,12 +674,9 @@ class AnchorNegotiator(SAOCallNegotiator):
             end-game even when the opponent never revealed it -- e.g. the only
             closeable deal on a pure-conflict domain.
         """
-        opponent = self._bidding_ufun()
+        opponent = self.opponent_ufun
         if opponent is None:
             return candidates[0]
-
-        if self.LOOKAHEAD and self._opp_offer_hist:
-            return self._lookahead_select(candidates, opponent)
 
         if self.PACCEPT_SEARCH and self._opp_offer_hist:
             # P(accept) rises from the opponent's estimated reservation (lo) to
@@ -1022,95 +750,14 @@ class AnchorNegotiator(SAOCallNegotiator):
         # (candidate order is our-utility-descending).
         return max(candidates, key=lambda o: float(opponent(o)))
 
-    def _lookahead_select(self, candidates: list[Outcome], opponent) -> Outcome:
-        """Expected-final-utility bid choice (the compute-heavy lookahead path).
-
-        For each candidate o, EV(o) = P_accept(o)*u(o) + (1-P_accept)*continuation.
-          * P_accept models a time-conceding opponent: it demands a share of its own
-            range that falls from ~1 (its ideal) early to ~0 (its reservation) by the
-            deadline; an offer above that demand is likely accepted, softened by
-            LOOKAHEAD_SOFT so the choice is smooth, not a hard cliff.
-          * continuation = max(our reservation, best the opponent has shown us): not
-            closing now is not catastrophic, so EV correctly values holding high
-            early and only conceding when continuation stops covering it.
-          * LOOKAHEAD_MC>0 integrates EV over that many samples of the opponent's
-            uncertain reservation (the genuinely time-spending Monte-Carlo path).
-        """
-        t = float(getattr(self, "_last_t", 0.0))
-        opp_utils = [float(opponent(o)) for o, _ in self._opp_offer_hist]
-        ideal = max(float(opponent(o)) for o in self._sorted_outcomes)
-        rv_base = self.RV_SLACK * min(opp_utils)
-        span = max(1e-6, ideal - rv_base)
-        cont = max(self._reserve, self._best_opp_util)
-        # MC samples of the opponent reservation (deterministic if MC==0).
-        if self.LOOKAHEAD_MC > 0:
-            m = int(self.LOOKAHEAD_MC)
-            rvs = [rv_base + (ideal - rv_base) * (j / (2 * m)) for j in range(m)]
-        else:
-            rvs = [rv_base]
-
-        def ev(o):
-            u_o = float(self.ufun(o))
-            v_o = float(opponent(o))
-            acc = 0.0
-            for rv in rvs:
-                sp = max(1e-6, ideal - rv)
-                share = (v_o - rv) / sp          # how good o is for them (0..1)
-                demand = (1.0 - t)               # they demand near-ideal early
-                p = (share - demand) / self.LOOKAHEAD_SOFT + 0.5
-                acc += min(1.0, max(0.0, p))
-            p_accept = acc / len(rvs)
-            return p_accept * u_o + (1.0 - p_accept) * cont
-
-        return max(candidates, key=ev)
-
     def _record_my_offer(self, outcome: Outcome) -> None:
         """Remember which values we have revealed (for deception diversification)."""
         if outcome is None:
             return
-        self._my_unique.add(outcome)  # for MiCRO reciprocity counting
-        self._my_offer_count += 1
-        # Earliness weight: our EARLY offers sit near our ideal; when the opponent
-        # rejects them they are the strongest signal about what is bad for them.
-        ew = 1.0 / self._my_offer_count
         for i in range(self._n_issues):
             self._my_value_counts[i][outcome[i]] = (
                 self._my_value_counts[i].get(outcome[i], 0) + 1
             )
-            self._my_value_weighted[i][outcome[i]] = (
-                self._my_value_weighted[i].get(outcome[i], 0.0) + ew
-            )
-
-    def _micro_bid(self, state: SAOState, t: float) -> Outcome:
-        """MiCRO bid: minimal concession with reciprocity (the alternative
-        bidding ARCHITECTURE). We walk our rational outcomes best-first and are
-        entitled to have proposed at most (distinct opponent offers + 1) of them,
-        so we never concede faster than the opponent does. A firm opponent (few
-        distinct offers) => we hold near our ideal; a conceding one => we match its
-        pace. Monotone (never un-concede). The deadline-adaptive rescue still forces
-        full concession late, and LAST_OFFER_GRAB still banks the opponent's best on
-        our final turn, so short deadlines cannot deadlock into a zero."""
-        last = len(self._sorted_outcomes) - 1
-        # Reciprocity entitlement: concede to index = number of DISTINCT offers the
-        # opponent has made (idx 0 = our ideal at the opening, before they offer).
-        idx = min(len(self._opp_unique), last)
-        rescue_time = self._effective_times()[0]
-        if t >= rescue_time:
-            # Deadline pressure: blend toward full concession so a firm opponent
-            # cannot deadlock us past the deadline into a no-deal.
-            frac = (t - rescue_time) / max(1e-9, 1.0 - rescue_time)
-            idx = max(idx, int(frac * last))
-        self._micro_i = max(self._micro_i, idx)  # monotone concession
-        # Final-turn safety: bank the opponent's best-shown (provably acceptable)
-        # offer rather than table our near-reservation bid into a timeout.
-        if self.LAST_OFFER_GRAB and self._best_opp_offer is not None:
-            nmi = getattr(self, "nmi", None)
-            n = getattr(nmi, "n_steps", None) if nmi else None
-            step = getattr(state, "step", -1)
-            if (n and (n - step) <= self.LAST_OFFER_ROUNDS
-                    and self._best_opp_util > self._reserve):
-                return self._best_opp_offer
-        return self._sorted_outcomes[self._micro_i]
 
     def concealing_bidding_strategy(self, state: SAOState) -> Outcome | None:
         """Choose our counter-offer.
@@ -1123,13 +770,6 @@ class AnchorNegotiator(SAOCallNegotiator):
             return self._cached_bid
 
         t = state.relative_time
-        self._last_t = t  # used by the LOOKAHEAD selector (P_accept time decay)
-
-        if self.BID_STRATEGY == "micro":
-            bid = self._micro_bid(state, t)
-            self._cached_bid_step = step
-            self._cached_bid = bid
-            return bid
         # "Never undersell" (ChargingBoul): never let our concession target fall
         # below the best utility the opponent has already offered us -- proposing
         # worse than a deal we could already get is pure self-sabotage. The
@@ -1221,7 +861,7 @@ class AnchorNegotiator(SAOCallNegotiator):
                 # but lopsided-by-our-model; banking it (it is already > our
                 # reservation) closes a positive deal that beats a ~0.5 no-deal.
                 return True
-            opp = self._bidding_ufun()
+            opp = self.opponent_ufun
             if opp is None or u_offer >= float(opp(offer)):
                 return True
         return False

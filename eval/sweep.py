@@ -4,7 +4,7 @@ Sweeps the anti-exploitation knobs (fair-floor fraction and concession exponent)
 and reports the aggregate result per combination, so we can pick the operating
 point that beats the benchmark by the largest margin without causing no-deals.
 
-    uv run python eval/sweep.py                      # vs benchmarkNegotiator
+    uv run python eval/sweep.py                      # vs WhaleNegotiator
     uv run python eval/sweep.py examples.boa.BOANeg
 """
 
@@ -21,7 +21,7 @@ MODES = ["greedy", "nash", "opponent"]
 
 
 def main() -> None:
-    opponent = sys.argv[1] if len(sys.argv) > 1 else "examples.map.MAPNeg"
+    opponent = sys.argv[1] if len(sys.argv) > 1 else "whale.WhaleNegotiator"
     AnchorNegotiator.CONCESSION_EXPONENT = 0.10
     print(f"Sweep vs {opponent}  (exp=0.10)\n")
     print(f"{'floor':>7}{'mode':>10}{'deals':>8}{'wins':>7}{'myAdv':>8}"

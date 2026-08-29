@@ -20,6 +20,8 @@ report/*.fls
 report/*.fdb_latexmk
 report/*.synctex.gz
 report/*.bb
+report/report.pdf
+report/*.tex
 
 # OS
 .DS_Store

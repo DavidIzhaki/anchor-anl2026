@@ -34,7 +34,7 @@ from bench import SCENARIOS_DIR, MY_NEGOTIATOR
 # Opponents that emit an opponent model (so tau_opp is meaningful and the
 # Concealing split is genuinely contested).
 ROSTER = [
-    "examples.map.MAPNeg",
+    "whale.WhaleNegotiator",
     "examples.boa.BOANeg",
     "examples.map.MAPNeg",
     "examples.simple.SimpleNegotiator",
@@ -70,9 +70,30 @@ def run(scenario: Scenario, opp: str, first: bool):
     return tau_me, tau_opp
 
 
+def _apply_overrides() -> dict:
+    """K=V argv overrides on AnchorNegotiator (float/bool/str)."""
+    import anchor
+    ov = {}
+    for a in sys.argv[1:]:
+        if "=" not in a:
+            continue
+        k, v = a.split("=", 1)
+        if v in ("True", "False"):
+            val = v == "True"
+        else:
+            try:
+                val = float(v)
+            except ValueError:
+                val = v
+        setattr(anchor.AnchorNegotiator, k, val)
+        ov[k] = val
+    return ov
+
+
 def main() -> None:
+    ov = _apply_overrides()
     scens = scenarios()
-    print(f"Model accuracy over {len(scens)} scenarios x 2 orders\n")
+    print(f"Model accuracy over {len(scens)} scenarios x 2 orders  overrides={ov}\n")
     print(f"{'opponent':>20}{'tau_me':>9}{'tau_opp':>9}{'share':>8}")
     print("-" * 46)
     gtm = gto = gshare = gn = 0.0

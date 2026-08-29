@@ -3,10 +3,10 @@
 Runs our agent against a chosen opponent across every local scenario and both
 move orders, and reports per-scenario and mean Advantage / Concealing / Score
 for both sides, plus the win margin. Used to iterate on beating a benchmark
-opponent (e.g. examples.map.MAPNeg).
+opponent (e.g. whale.WhaleNegotiator).
 
 Usage:
-    uv run python eval/bench.py                      # default: vs benchmarkNegotiator
+    uv run python eval/bench.py                      # default: vs WhaleNegotiator
     uv run python eval/bench.py examples.boa.BOANeg  # vs another opponent
 """
 
@@ -78,7 +78,7 @@ def evaluate(opponent: str) -> tuple[list, dict]:
 
 
 def main() -> None:
-    opponent = sys.argv[1] if len(sys.argv) > 1 else "examples.map.MAPNeg"
+    opponent = sys.argv[1] if len(sys.argv) > 1 else "whale.WhaleNegotiator"
     get_class(opponent)  # fail fast if not importable
 
     rows, sums = evaluate(opponent)

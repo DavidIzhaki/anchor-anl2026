@@ -1,7 +1,7 @@
 """Broad robustness arena (local eval only; NOT in the submission zip).
 
 Tests our agent against a large, diverse roster of real NegMAS opponents (plus
-the local benchmark examples.map.MAPNeg) across the 7 local scenarios AND many
+the local benchmark whale.WhaleNegotiator) across the 7 local scenarios AND many
 randomly generated scenarios spanning cooperative -> competitive structure.
 
 Reports, sorted by our mean margin:
@@ -34,7 +34,7 @@ from bench import run_one, SCENARIOS_DIR
 # time-based, oriented, following and strong hybrids -- plus the benchmark and
 # the three skeleton examples.
 ROSTER = [
-    "examples.map.MAPNeg",
+    "whale.WhaleNegotiator",
     "examples.boa.BOANeg", "examples.map.MAPNeg", "examples.simple.SimpleNegotiator",
     "negmas.sao.BoulwareTBNegotiator", "negmas.sao.ConcederTBNegotiator",
     "negmas.sao.LinearTBNegotiator", "negmas.sao.TimeBasedConcedingNegotiator",
@@ -110,8 +110,19 @@ COOP_CUT = -0.2  # corr >= cut => cooperative bucket, else competitive
 
 
 def main() -> None:
-    n_gen = int(sys.argv[1]) if len(sys.argv) > 1 else 24
-    mode = sys.argv[2] if len(sys.argv) > 2 else "mixed"
+    # Optional K=V overrides on AnchorNegotiator (for before/after comparisons).
+    import anchor
+    pos = []
+    for a in sys.argv[1:]:
+        if "=" in a:
+            k, v = a.split("=", 1)
+            val = (v == "True") if v in ("True", "False") else (
+                float(v) if v.replace(".", "").replace("-", "").isdigit() else v)
+            setattr(anchor.AnchorNegotiator, k, val)
+        else:
+            pos.append(a)
+    n_gen = int(pos[0]) if len(pos) > 0 else 24
+    mode = pos[1] if len(pos) > 1 else "mixed"
     print(f"[generated-scenario mode: {mode}]")
     scenarios = load_local() + gen_scenarios(n_gen, mode)
     n_coop = sum(1 for _, _, c in scenarios if c >= COOP_CUT)
